@@ -1,3 +1,3 @@
-from .trainOccupancyModelEvent import TrainOccupancyModelEvent
+from .trainOccupancyModelEventFabric import TrainOccupancyModelEventFabric
 
-__all__ = ["TrainOccupancyModelEvent"]
+__all__ = ["TrainOccupancyModelEventFabric"]

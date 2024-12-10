@@ -16,7 +16,7 @@ spec:
         #- name: <secret-name>   # you can remove this block if you are user Docker Hub
       containers:
         - name: monitoring
-          image: <image-name>:<tag>   # If you do not provide a <tag>, k8s will use `latest`
+          image: jamilaws/monitoring   # If you do not provide a <tag>, k8s will use `latest`
           imagePullPolicy: "Always"   # This means the container runtime will pull the image every time the pod is (re-)created. Another possible value is 'IfNotPresent'
           ports:
             - containerPort: 8000     # Exposes a port in a given container to receive traffic

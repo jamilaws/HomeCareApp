@@ -5,7 +5,7 @@ import logging
 from typing import Callable, Any, List
 from fastapi import FastAPI
 
-logger = logging.getLogger("fastapi_cli")
+logger = logging.getLogger("uvicorn.error")
 
 
 class LocalGateway(FastAPI):

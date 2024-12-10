@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: <component-name>-configmap
+  name: modulation-configmap
   labels:
-    app: <component-name>
+    app: modulation
 data:
-  SCH_SERVICE_NAME: http://sif-edge.sif:9000
+  SCH_SERVICE_NAME: http://sif-edge.digital-twin:9000
+  MINIO_ROOT_PASSWORD: DjcfggrfVXj5zaLJ
+  MINIO_ROOT_USER: minio

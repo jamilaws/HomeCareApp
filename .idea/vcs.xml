@@ -5,5 +5,7 @@
     <mapping directory="$PROJECT_DIR$/actuation" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/modulation" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/monitoring" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/visualization/homecare-hub" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/visualization/sif-viz-component" vcs="Git" />
   </component>
 </project>

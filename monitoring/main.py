@@ -1,6 +1,6 @@
-from base import LocalGateway, base_logger, PeriodicTrigger
-from events import TrainOccupancyModelEvent
+from base import base_logger, PeriodicTrigger
+from events import TrainOccupancyModelEventFabric
 
-evt = TrainOccupancyModelEvent()
+evt = TrainOccupancyModelEventFabric()
 
 tgr = PeriodicTrigger(evt, "30s", "1m")
