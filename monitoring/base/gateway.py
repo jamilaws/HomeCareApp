@@ -5,7 +5,7 @@ import logging
 from typing import Callable, Any, List
 from fastapi import FastAPI
 
-logger = logging.getLogger("fastapi_cli")
+logger = logging.getLogger("uvicorn.error")
 
 
 class LocalGateway(FastAPI):
@@ -83,6 +83,7 @@ class LocalGateway(FastAPI):
         is_k8s = os.environ.get("KUBERNETES_SERVICE_PORT", None) is not None
 
         if is_k8s:
+            logger.info("Kubernetis detected")
             hostname = os.environ.get("HOSTNAME").split("-")[:-2]
             hostname = "_".join(hostname)
             host = f"{hostname.upper()}_SERVICE_HOST"

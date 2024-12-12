@@ -6,5 +6,8 @@ metadata:
     app: modulation
 data:
   SCH_SERVICE_NAME: http://sif-edge.digital-twin:9000
+  INFLUXDB_HOST: http://influx.iot.svc.cluster.local:8086
+  INFLUXDB_USER: admin
+  INFLUXDB_PASS: secure_influx_iot_user
   MINIO_ROOT_PASSWORD: DjcfggrfVXj5zaLJ
   MINIO_ROOT_USER: minio

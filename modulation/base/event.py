@@ -39,12 +39,3 @@ class BaseEventFabric(ABC):
         except Exception as err:
             print("Failure during request because:")
             print(err)
-
-
-class ExampleEventFabric(BaseEventFabric):
-
-    def __init__(self):
-        super(ExampleEventFabric, self).__init__()
-
-    def call(self, *args, **kwargs):
-        return "GenEvent", None
