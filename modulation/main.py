@@ -7,14 +7,13 @@ import datetime
 from influxdb_client import InfluxDBClient
 from minio import Minio
 from io import BytesIO
-#import requests
 from base import LocalGateway, base_logger, BaseEventFabric, PeriodicTrigger
 
 BUCKET_KITCHEN = "1_2_9"
 BUCKET_BATHROOM = "1_3_6"
 BUCKET_ROOM = "1_2_2"
 BUCKET_DOOR = "1_4_8"
-BUCKETS_PIR = [BUCKET_KITCHEN, BUCKET_BATHROOM, BUCKET_ROOM]
+BUCKETS_PIR = [BUCKET_KITCHEN, BUCKET_BATHROOM, BUCKET_ROOM, BUCKET_DOOR]
 
 
 INFLUX_ORG = "wise2024"
@@ -53,11 +52,10 @@ def fetch_data(bucket, measurement):
                                 |> filter(fn: (r) => r["_measurement"] == "{measurement}")
                                  ''', params=p)
         obj = []
-        #base_logger.info(tables)
+        
         for table in tables:
             for record in table.records:
                 val = {}
-                #base_logger.info(record)
                 val["bucket"] = bucket
                 val["timestamp"] = record["_time"].timestamp() * 1000
                 if len(val.keys()) != 0:
@@ -201,5 +199,5 @@ class TrainOccupancyModelEventFabric(BaseEventFabric):
 
 app.deploy(createOccupancyModelFunction, "createOccupancyModelFunction-fn", "TrainOccupancyModelEvent")
 
-evt = TrainOccupancyModelEventFabric()
-trigger = PeriodicTrigger(evt, "30s", "10s")
+#evt = TrainOccupancyModelEventFabric()
+#trigger = PeriodicTrigger(evt, "30s", "10s")

@@ -1,38 +1,56 @@
-from base import LocalGateway, base_logger, PeriodicTrigger, ExampleEventFabric
+import os
+import time
+import urllib3
+from fastapi import Request
+import json
+from base import LocalGateway, base_logger, PeriodicTrigger, ExampleEventFabric, OneShotTrigger, BaseEventFabric
+
+VIZ_URL = "http://192.168.178.63:9000"
 
 
 app = LocalGateway()
 
+def sendTodoToViz(title, message, level):
+    todo = {
+        "titel": title,
+        "msg": message,
+        "level": level,
+        "timestamp": int(time.time()*1000)
+    }
 
-async def demo():
-    base_logger.info("HELLO WORLD!!! You did it! :D")
+    todoEncoded = json.dumps(todo).encode('utf-8')
+    http = urllib3.PoolManager()
+    base_logger.info("Sending todo to VIZ")
+    try:
+        response = http.request('POST', VIZ_URL + "/api/todo", body=todoEncoded, headers={'Content-Type': 'application/json'})
+ 
+    except Exception as e:
+        base_logger.error(f"Error sending todo to VIZ: {e}")
+
+    if response.status == 200:
+        base_logger.info(f"Todo successfully sent")
+    else:
+        base_logger.error(f"Failed to send todo. Status: {response.status}, Response: {response.data.decode('utf-8')}")
+
     return
 
 
-async def base_fn():
-    """
-    Test example of dynamically deploying another route upon an HTTP request
+def emergencyNotificationFunction(request: Request):
+    info = await request.json()
+    base_logger.info("Handeling Emergency")
+    sendTodoToViz("Emergency", "Emergency detected", 2)
+    base_logger.info("Emergency handled")
+    return
 
-    Since this function will be invoked once the `test` event is triggered,
-    the route `/api/other` will be registered at runtime rather than upon 
-    starting the server. Such behavior allows to dynamically create functions
-    that could answer to new events. Be aware that registering two functions
-    with the same name will result in only one route. You can change this
-    behavior by providing the `path` argument.
+app.deploy(emergencyNotificationFunction, "emergencyNotificationFunction-fn", "EmergencyEvent")
 
-    Once this new route is registered, you will see it in the Homecare Hub under
-    SIF Status, which means upon receiving an event (in this case `test`), you
-    will see in the logs of this example the print above.
-    """
-    app.deploy(demo, "demo-fn", "GenEvent")
-    return {"status": 200}
+class EmergencyEventFabric(BaseEventFabric):
 
-# Deploy a route within this server to be reachable from the SIF scheduler
-# it appends the name of the cb to `/api/`. For more, please read the
-# documentation for `deploy`
-app.deploy(base_fn, "fn-fabric", "CreateFn")
+    def __init__(self):
+        super(EmergencyEventFabric, self).__init__()
 
+    def call(self, *args, **kwargs):
+        return "EmergencyEvent", None
 
-evt = ExampleEventFabric()
-
-tgr = PeriodicTrigger(evt, "30s", "1m")
+evt = EmergencyEventFabric()
+trigger = OneShotTrigger(evt, "10s")

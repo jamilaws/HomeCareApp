@@ -5,7 +5,7 @@ import logging
 from typing import Callable, Any, List
 from fastapi import FastAPI
 
-logger = logging.getLogger("fastapi_cli")
+logger = logging.getLogger("uvicorn.error")
 
 
 class LocalGateway(FastAPI):
@@ -27,9 +27,9 @@ class LocalGateway(FastAPI):
     :param mock: Indicates if remote calls must be mocked
     """
 
-    def __init__(self, mock: bool = False, *args, **kwargs):
+    def __init__(self, mock: bool = False, localhost = None, *args, **kwargs):
         super(LocalGateway, self).__init__(*args, **kwargs)
-        self.local_ip = None
+        self.local_ip = None or localhost
         self.local_port = None
         self.mock = mock
         self.scheduler = os.environ.get("SCH_SERVICE_NAME", "localhost:8080")
@@ -83,6 +83,7 @@ class LocalGateway(FastAPI):
         is_k8s = os.environ.get("KUBERNETES_SERVICE_PORT", None) is not None
 
         if is_k8s:
+            logger.info("Kubernetis detected")
             hostname = os.environ.get("HOSTNAME").split("-")[:-2]
             hostname = "_".join(hostname)
             host = f"{hostname.upper()}_SERVICE_HOST"
@@ -92,7 +93,8 @@ class LocalGateway(FastAPI):
             self.local_port = os.environ[port]
             return
 
-        hostname = socket.gethostname()
-        self.local_ip = socket.gethostbyname(hostname)
+        if self.local_ip is None:
+            hostname = socket.gethostname()
+            self.local_ip = socket.gethostbyname(hostname)
         logger.warning("Defaulting to port 8000...")
         self.local_port = "8000"
