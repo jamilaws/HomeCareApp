@@ -68,8 +68,16 @@ def fetch_data(bucket, measurement):
 
 def fetch_model():
     client = Minio(MINIO_SERVER, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
+    # fetching the name of the latest model
     try:
-        model = client.get_object(MINIO_BUCKET, "model_12-12-24_15-51-29.json") # TODO: Change to dynamic model name
+        model_names = client.get_object(MINIO_BUCKET, "latest_models.json")
+        names = model_names.read().decode(encoding="utf-8")
+        loaded_names = json.loads(names)
+        latest = loaded_names["latest"]
+    except Exception as e:
+        base_logger.error(f"Failed to fetch the name of the latest model from minio: {e}")
+    try:
+        model = client.get_object(MINIO_BUCKET, latest) 
         model_data = model.read()
     except Exception as e:
         base_logger.error(f"Failed to fetch model from minio: {e}")
@@ -96,17 +104,12 @@ def check_emergency(data, model):
     base_logger.info("Checking for emergency")
 
     # Read and parse the JSON from the BytesIO object
-    print(type(model))
-    #model.seek(0)
     model_json = model.decode(encoding="utf-8")
     model_data = json.loads(model_json)
 
     # Validate the structure of the model data
     if not all(key in model_data for key in ["bucket", "time_interval", "average_duration_minutes"]):
         base_logger("Model JSON does not have the required keys.")
-
-    print(type(model_data["bucket"]))
-    print(model_data["bucket"])
 
     bucket_mapping = {
         "1_2_9": "kitchen",
@@ -115,20 +118,20 @@ def check_emergency(data, model):
         "1_4_8": "door",
     }
 
-    base_logger.info(data)
-    base_logger.info(model_data)
+    base_logger.info("data of past 6 hours:" + str(data))
+    base_logger.info("latest model data: " + str(model_data))
 
     if len(data) == 0:
-        return True, "Sensors failed; there might be an undetected emergency"
+        return True, "Sensors failed; there might be an undetected emergency", "general", 0
 
     data["room"] = data["bucket"].replace(bucket_mapping)
     data = data.sort_values(by="timestamp").reset_index(drop=True)
     data["stay_id"] = (data["room"] != data["room"].shift()).cumsum()
     # Get the last stay (all others are irrelevant as the pearson clearly moved)
     last_stay = data[data["stay_id"] == data["stay_id"].iloc[-1]]
-    if room == "door":
-        return False, "No emergency detected. Patient is not at home."
     room = last_stay["room"].iloc[0]
+    if room == "door":
+        return False, "No emergency detected. Patient is not at home.", "general", 0
     start_time = last_stay["timestamp"].iloc[0]
     end_time = last_stay["timestamp"].iloc[-1]
     current_duration = (end_time - start_time).total_seconds() / 60
@@ -151,16 +154,20 @@ def check_emergency(data, model):
             break
     
     if avg_duration is None:
-        return True, f"No model data available for the current room {room} and time interval {time_interval}"
+        return True, f"No model data available for the current room {room} and time interval {time_interval}" , room, 0
     
     # Check if the current duration is 20% longer than the average
-    threshold = avg_duration * 1.2
-    is_longer = current_duration > threshold
+    threshold_level_2 = avg_duration * 1.2
+    threshold_level_1 = avg_duration * 1.1
+    is_longer = current_duration > threshold_level_2
+    is_longer_level_1 = current_duration > threshold_level_1
 
     if is_longer:
-        return True, f"Emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is at least 20% longer than the average of {avg_duration} minutes"
+        return True, f"Emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is at least 20% longer than the average of {avg_duration} minutes", room, 2
+    elif is_longer_level_1:
+        return True, f"Emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is at least 10% longer than the average of {avg_duration} minutes", room, 1
    
-    return False, f"No emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is within the normal range of {avg_duration} minutes"
+    return False, f"No emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is within the normal range of {avg_duration} minutes", room, 0
 
 async def emergencyDetectionFunction():
     base_logger.info("Emergency detection function called")
@@ -169,11 +176,13 @@ async def emergencyDetectionFunction():
     base_logger.info("Fetching data for past 6 hours")
     data = fetch_influx_data()
     base_logger.info("Checking for emergancy")
-    emergency, message = check_emergency(data, model)
+    emergency, message, room, level = check_emergency(data, model)
     if emergency:
         base_logger.info(message)
-        emergancyEvent = EmergencyEventFabric()
-        emergancyTrigger = OneShotTrigger(emergancyEvent)
+        base_logger.info("room: " + room)
+        base_logger.info("level: " + str(level))
+        emergencyEvent = EmergencyEventFabric(room=room, level=level, message=message)
+        emergencyTrigger = OneShotTrigger(emergencyEvent)
     else:
         base_logger.info(message)
 
@@ -186,4 +195,4 @@ evtCheckEmergency = CheckEmergencyEventFabric()
 
 
 tgr = PeriodicTrigger(evt, "24h", "30s")
-tgrCheckEmergency = PeriodicTrigger(evtCheckEmergency, "30m", "30s")
+tgrCheckEmergency = PeriodicTrigger(evtCheckEmergency, "30m", "30s") 

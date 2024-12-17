@@ -34,23 +34,21 @@ def sendTodoToViz(title, message, level):
 
     return
 
+def sendEmail():
+    base_logger.info("Sending email not yet implemented")
 
-def emergencyNotificationFunction(request: Request):
+    return
+
+
+async def emergencyNotificationFunction(request: Request):
+    base_logger.info("Emergency notification function invoked")
     info = await request.json()
+    emergency_data = info.get("EmergencyEvent", {}).get("data", {})
+    base_logger.info(f"Received emergency notification: {emergency_data}")
     base_logger.info("Handeling Emergency")
-    sendTodoToViz("Emergency", "Emergency detected", 2)
+    sendTodoToViz(emergency_data["room"].upper(), emergency_data["message"], emergency_data["level"]) 
+    sendEmail()
     base_logger.info("Emergency handled")
     return
 
-app.deploy(emergencyNotificationFunction, "emergencyNotificationFunction-fn", "EmergencyEvent")
-
-class EmergencyEventFabric(BaseEventFabric):
-
-    def __init__(self):
-        super(EmergencyEventFabric, self).__init__()
-
-    def call(self, *args, **kwargs):
-        return "EmergencyEvent", None
-
-evt = EmergencyEventFabric()
-trigger = OneShotTrigger(evt, "10s")
+app.deploy(emergencyNotificationFunction, "emergencyNotificationFunction-fn", "EmergencyEvent", "POST")

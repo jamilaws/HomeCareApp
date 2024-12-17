@@ -3,6 +3,7 @@ from datetime import timedelta
 from fastapi import Request
 import pandas as pd
 import datetime
+import json
 
 from influxdb_client import InfluxDBClient
 from minio import Minio
@@ -109,6 +110,7 @@ def find_averages_by_time_interval(data):
         "1_2_9": "kitchen",
         "1_3_6": "bathroom",
         "1_2_2": "bedroom",
+        "1_4_8": "door",
     }
     
     data["bucket"] = data["bucket"].replace(bucket_mapping)
@@ -160,6 +162,7 @@ def save_model(model):
     current_time = datetime.datetime.now().strftime("%d-%m-%y_%H-%M-%S")
     data = pd.DataFrame.to_json(model).encode("utf-8")
 
+    # save model to minio
     try:
         client.put_object(
             bucket_name=MINIO_BUCKET,
@@ -172,6 +175,33 @@ def save_model(model):
     except Exception as e:
         base_logger.error(f"Error storing model to minio: {e}")
     base_logger.info(f"Stored model_{current_time}.json to minio")
+
+    # find the name of the latest model to make it the before pointer
+    old_names_model = client.get_object(MINIO_BUCKET, "latest_models.json")
+    names = old_names_model.read()
+    names_json = names.decode(encoding="utf-8")
+    old_names_data = json.loads(names_json)
+    previous_latest = old_names_data["latest"]
+
+
+    # save latest pointer to minio
+    latest_model_name = {"latest": f"model_{current_time}.json",
+                         "before": previous_latest}
+    base_logger.info(f"latest_model_name: {latest_model_name}")
+    data_name = json.dumps(latest_model_name).encode("utf-8")
+    
+    try:
+        client.put_object(
+            bucket_name=MINIO_BUCKET,
+            object_name="latest_models.json",
+            data=BytesIO(data_name),
+            length=len(data_name),
+            content_type="application/json",
+            metadata={'time': current_time}
+        )
+    except Exception as e:
+        base_logger.error(f"Error storing model to minio: {e}")
+    base_logger.info(f"Stored latest models pointer to minio")
 
     return
 
@@ -188,16 +218,5 @@ async def createOccupancyModelFunction():
 
     return {"status": 200, "message": "Model trained and stored"}
 
-class TrainOccupancyModelEventFabric(BaseEventFabric):
-
-    def __init__(self):
-        super(TrainOccupancyModelEventFabric, self).__init__()
-
-    def call(self, *args, **kwargs):
-        return "TrainOccupancyModelEvent", None
-
 
 app.deploy(createOccupancyModelFunction, "createOccupancyModelFunction-fn", "TrainOccupancyModelEvent")
-
-#evt = TrainOccupancyModelEventFabric()
-#trigger = PeriodicTrigger(evt, "30s", "10s")
