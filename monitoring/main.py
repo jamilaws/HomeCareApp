@@ -3,13 +3,15 @@ from datetime import timedelta
 from fastapi import Request
 import pandas as pd
 import datetime
+import time
+import urllib3
 
 from influxdb_client import InfluxDBClient
 from minio import Minio
 from io import BytesIO
 import json
 
-from events import TrainOccupancyModelEventFabric, EmergencyEventFabric, CheckEmergencyEventFabric
+from events import TrainOccupancyModelEventFabric, EmergencyEventFabric, CheckEmergencyEventFabric, AnalyseMotionEventFabric
 from base import base_logger, PeriodicTrigger, LocalGateway, OneShotTrigger
 
 app = LocalGateway()
@@ -30,6 +32,8 @@ MINIO_SERVER = "192.168.178.63:9090"
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minio")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "DjcfggrfVXj5zaLJ")
 MINIO_BUCKET = "models"
+
+VIZ_URL = "http://192.168.178.63:9000"
 
 if INFLUX_TOKEN is None or INFLUX_USER is None or INFLUX_PASS is None or SIF_SCHEDULER is None:
     raise ValueError("Missing env variables")
@@ -83,6 +87,25 @@ def fetch_model():
         base_logger.error(f"Failed to fetch model from minio: {e}")
     return model_data
 
+def fetchLastTwoModels():
+    client = Minio(MINIO_SERVER, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
+    # fetching the name of the latest model
+    try:
+        model_names = client.get_object(MINIO_BUCKET, "latest_models.json")
+        names = model_names.read().decode(encoding="utf-8")
+        loaded_names = json.loads(names)
+        latest = loaded_names["latest"]
+        previous = loaded_names["before"]
+    except Exception as e:
+        base_logger.error(f"Failed to fetch the name of the latest model from minio: {e}")
+    try:
+        latest_model = client.get_object(MINIO_BUCKET, latest) 
+        latest_model_data = latest_model.read()
+        previous_model = client.get_object(MINIO_BUCKET, previous)
+        previous_model_data = previous_model.read()
+    except Exception as e:
+        base_logger.error(f"Failed to fetch model from minio: {e}")
+    return latest_model_data, previous_model_data
 
 def fetch_influx_data():
     all_data = []
@@ -98,7 +121,6 @@ def fetch_influx_data():
     df = df.sort_values('timestamp')
 
     return df
-
 
 def check_emergency(data, model):
     base_logger.info("Checking for emergency")
@@ -169,6 +191,75 @@ def check_emergency(data, model):
    
     return False, f"No emergency detected in {room}. Patient has been in the room for {current_duration} minutes, which is within the normal range of {avg_duration} minutes", room, 0
 
+def analyseMotionDifference(latestModelBytes, previousModelBytes):
+    latestModel = json.loads(latestModelBytes)
+    previousModel = json.loads(previousModelBytes)
+
+    level = 0
+    details_3 = []
+    details_2 = []
+    details_1 = []
+
+    buckets = latestModel["bucket"]
+    time_intervals = latestModel["time_interval"]
+
+    for key in buckets.keys():
+        bucket = buckets[key]
+        time_interval = time_intervals[key]
+
+        if bucket not in previousModel["bucket"] or time_interval not in previousModel["time_interval"]:
+            continue
+
+        avg_duration_latest = latestModel["average_duration_minutes"][key]
+        avg_duration_previous = previousModel["average_duration_minutes"][key]
+
+        # Check how much in percentage the average duration has changed
+        change = abs((avg_duration_latest - avg_duration_previous) / avg_duration_previous) * 100
+
+        if change > 50:
+            level = max(level, 3)
+        elif change > 30:
+            level = max(level, 2)
+        elif change > 10:
+            level = max(level, 1)
+
+    details = ""
+    if len(details_3) > 0:
+        details.append(f"The patient significantly changed the behaviour in the rooms: " + ", ".join(details_3) + "\n")
+    if len(details_2) > 0:
+        details.append(f"The patient changed the behaviour in the rooms: " + ", ".join(details_2)+  "\n")
+    if len(details_1) > 0:
+        details.append(f"The patient slightly changed the behaviour in the rooms: " + ", ".join(details_1)+  "\n")
+
+    if level == 0:
+        details = "No significant changes in the patient's behaviour"
+
+    return level, details
+
+def sendInformationToVIZ(level, details):
+    info = {
+        "summary": "Motion analysis",
+        "detail": details,
+        "level": level,
+        "timestamp": int(time.time()*1000)
+    }
+
+    infoEncoded = json.dumps(info).encode('utf-8')
+    http = urllib3.PoolManager()
+    base_logger.info("Sending info to VIZ")
+    try:
+        response = http.request('POST', VIZ_URL + "/api/info", body=infoEncoded, headers={'Content-Type': 'application/json'})
+ 
+    except Exception as e:
+        base_logger.error(f"Error sending info to VIZ: {e}")
+
+    if response.status == 200:
+        base_logger.info(f"Info successfully sent")
+    else:
+        base_logger.error(f"Failed to send info. Status: {response.status}, Response: {response.data.decode('utf-8')}")
+
+    return
+
 async def emergencyDetectionFunction():
     base_logger.info("Emergency detection function called")
     base_logger.info("Fetching model from minio")
@@ -188,11 +279,23 @@ async def emergencyDetectionFunction():
 
     return 
 
+async def motionAnalysisFunction():
+    base_logger.info("Motion analysis function called")
+    lastModel, previousModel = fetchLastTwoModels()
+    base_logger.info("Analysing differences between the last two models")
+    level, details = analyseMotionDifference(lastModel, previousModel)
+    base_logger.info(f"Level: {level}, Details: {details}")
+    sendInformationToVIZ(level, details)
+    return
+
 app.deploy(emergencyDetectionFunction, "emergencyDetectionFunction-fn", "CheckEmergencyEvent")
+app.deploy(motionAnalysisFunction, "motionAnalysisFunction-fn", "AnalyseMotionEvent")
 
 evt = TrainOccupancyModelEventFabric()
 evtCheckEmergency = CheckEmergencyEventFabric()
+evtAnalyseMotion = AnalyseMotionEventFabric()
 
 
 tgr = PeriodicTrigger(evt, "24h", "30s")
 tgrCheckEmergency = PeriodicTrigger(evtCheckEmergency, "30m", "30s") 
+tgrAnalyseMotion = PeriodicTrigger(evtAnalyseMotion, "24h", "30s")
